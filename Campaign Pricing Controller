@@ -1,0 +1,114 @@
+global class CampaignPricingController {
+    @future(callout=true)
+    webservice static void RefreshCampaignPricingDataForProgram(){
+        
+        //get programs that need pricing data, loop through list and invoke webservice to access pricing data
+        Set <Program__c> programs = new Set<Program__c>([SELECT Peoplesoft_rel_code__c, Upload_Pricing_Data_Flag__c FROM Program__c WHERE Upload_Pricing_Data_Flag__c
+                                                         =true]);
+        
+        SYSTEM.debug('programs'+programs);
+        
+        Map <String, String> programIds = new Map<String, String>();
+        
+        //add the PS Code and a blank coupon code to the map
+        for(Program__c prog: programs){
+            programIds.put(prog.PeopleSoft_rel_code__c, '');
+        }
+        
+        
+        if(programs.size() > 0){
+            //Get a list of the campaigns that correspond to these programs
+            //  //Send the map to the webservice calling class
+            Set<Campaign_Pricing__c> updatedPricing = PricingController.pricingController(programIds);
+            
+            
+            SYSTEM.debug('returned result:' + updatedPricing);
+            //update records if there are new ones and delete the old ones
+            if(updatedPricing.size() > 0){
+                //Get a list of duplicate campaigns so we can delete the old and inactive
+                List<Campaign_Pricing__c> deleteDups = new List<Campaign_Pricing__c>();
+                
+                List<String> names = new List<String>();
+                for(campaign_pricing__c c : updatedPricing){
+                    names.add(c.Name);
+                }
+                
+                deleteDups.addAll([SELECT Id, name, is_Active__c FROM Campaign_Pricing__c WHERE name
+                                   IN: names OR is_Active__c = false]);
+                //a dummy list to hold the returned set
+                List <Campaign_Pricing__c>newPric = new List<Campaign_Pricing__c>();
+                newPric.addAll(updatedPricing);
+                SYSTEM.debug('to delete:'+deleteDups);
+                try{
+                    //delete 
+                    delete deleteDups;   
+                    //update
+                    insert newPric;
+                    
+                }
+                
+                catch(DmlException ex){
+                    SYSTEM.debug('Insert failed '+ ex);
+                }
+            }
+            
+        }
+    }
+    
+    webservice static String RefreshCampaignPricingDataForCampaignProgram(Id[] ID){
+        
+        //A map for the CoupCode-PS code pairs
+        Map <String, String> codePairs = new Map<String, String>();
+        //A set to store old campaigns
+        Set <Campaign_Pricing__c> oldPricing = new Set <Campaign_Pricing__c>([SELECT Id, coup_code__c, Peoplesoft_rel_code__c, Name FROM Campaign_Pricing__c
+                                                                              WHERE Id IN:ID]);
+        
+        for(Campaign_Pricing__c newP : oldPricing){
+            codePairs.put(newP.Peoplesoft_rel_code__c,newP.coup_code__c);
+        }
+        //Make callout prior to database changes
+        //List to store new Campaign Pricing Objects
+        Set <Campaign_Pricing__c> updatedPricing= new Set<Campaign_Pricing__c>();
+        updatedPricing=PricingController.pricingController(codePairs);
+        
+        //now once callout is made we can update the db
+        //Create a list of all inactive campaigns to delete
+        List<Campaign_Pricing__c> inActive = new List<Campaign_Pricing__c>([SELECT id, is_Active__c FROM Campaign_Pricing__c WHERE is_Active__c 
+                                                                            = false ]);
+        
+        
+        SYSTEM.debug('inactive' + inActive);
+        SYSTEM.debug('old' + oldPricing);
+        SYSTEM.debug('new'+ updatedPricing);
+        //update records if there are new ones and delete the old ones
+        if(updatedPricing.size() > 0){
+            SYSTEM.debug('returned result:' + updatedPricing);
+            //add the old pricing to the inactive to delete
+            inActive.addAll(oldPricing);
+            //a dummy list to hold the returned set
+            List <Campaign_Pricing__c>newPric = new List<Campaign_Pricing__c>();
+            newPric.addAll(updatedPricing);
+            try{
+                insert newPric;
+                //delete oldPricing; 
+                //delete oldPricing;
+                //delete inactive
+                delete inActive;
+                
+                return 'success';
+            }
+            
+            catch(DmlException ex){
+                return('Insert failed '+ ex);
+            }
+        }
+        //else delete inactive records and return
+        else{
+            delete inActive;    
+            return 'No new records';
+        }
+        
+    }
+    
+    
+}
