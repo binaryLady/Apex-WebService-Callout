@@ -1,0 +1,104 @@
+public class PricingController{
+
+    public static Set<Campaign_Pricing__c> pricingController(Map<String, String> codes){
+        
+        Set <Campaign_Pricing__c> result = new Set<Campaign_Pricing__c>();
+
+        //list for the XML nodes
+        List<TG_XmlNode> recs = new List<TG_XmlNode>();
+        //Check if the caller is test
+        UnitTestUtil oUtil = UnitTestUtil.getInstance();
+        if (oUtil.IsUnitTesting) {
+            result.add(elementToResult(oUtil.MockResponse));
+        }
+        else{
+            for(String prog : codes.keySet()){
+                String coupon = codes.get(prog);
+                String psCode = prog;
+                SYSTEM.debug('coupon'+coupon);
+                SYSTEM.debug('psCode' + psCode);
+                
+                Http h = new Http();
+                httpRequest req = createRequest(psCode, coupon);
+                
+                HttpResponse res = h.send(req);
+                
+                String requestXml = res.getBody();
+
+                TG_XmlDom dom = new TG_XmlDom(requestXml);
+                TG_XmlNode root = dom.root;	
+                
+                recs.addAll(root.getElementsByTagName('pric:CouponPricing'));
+				        if(recs.size() != 0){
+                    for(TG_XmlNode rec : recs){
+                        SYSTEM.debug('rec'+rec);
+                        result.add(elementToResult(rec));
+                    }
+                }
+       
+             }//end for
+            
+        }
+        
+         return result;
+   	
+    }
+      //encapsulate callout request for testing
+   	 public static HttpRequest createRequest(String code, String coupon){
+         String psCode = code;
+         //String coupon = coupon;
+             Http h = new Http();
+                httpRequest req = new HttpRequest();
+               String body = '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pric="http://xmlns.wexinc.com/Internal/BOD/Price"xmlns:com="http://xmlns.wexinc.com/Internal/BOD/Common"><soapenv:Header/><soapenv:Body><pric:GetPricingRateByCouponInputMsg><pric:Source><!--Optional:--><com:Name>?</com:Name><!--Optional:--><com:EntityType>?</com:EntityType><!--Optional:--><com:EntityId></com:EntityId></pric:Source><pric:RelationCode>'+psCode+'</pric:RelationCode><pric:CouponCode>'+coupon+'</pric:CouponCode></pric:GetPricingRateByCouponInputMsg></soapenv:Body></soapenv:Envelope>';
+                
+                req.setMethod('POST');
+                req.setEndpoint('https://webservices.wexinc.com/EnterpriseServices/Entity/Pricing/V1 HTTP/1.1');
+                req.setHeader('Accept-Encoding', 'gzip,deflate');
+                req.setHeader('Content-Type', 'text/xml;charset=UTF-8');
+                req.setHeader('SOAPAction', '"GetPricingRateByCoupon"');
+                req.setHeader('Content-Length', '724');
+                req.setHeader('Host', 'webservices.wexinc.com');
+                req.setHeader('Connection', 'Keep-Alive');
+                req.setHeader('User-Agent', 'Apache-HttpClient/4.1.1: (java 1.5)');
+                req.setTimeout(120000);
+                req.setBody(body);
+            
+            
+            	return req;
+        }
+    public static Campaign_Pricing__c elementToResult(TG_XmlNode node){
+        if(node.getElementByTagName('pric:RiskCode').textContent == ''){
+            node.getElementByTagName('pric:RiskCode').textContent = 'No';
+        }
+        Campaign_Pricing__c price = new Campaign_Pricing__c();
+        price.prime_rate_effective_date__c = date.valueOf(node.getElementByTagName('pric:PrimeRateDate').textContent);
+        price.Name = node.getElementByTagName('pric:CouponCode').textContent+' Risk-'+ node.getElementByTagName('pric:RiskCode').textContent;
+        price.coup_code__c = node.getElementByTagName('pric:CouponCode').textContent;
+        price.Peoplesoft_rel_code__c = node.getElementByTagName('pric:RelationCode').textContent;
+        price.risk_code__c =node.getElementByTagName('pric:RiskCode').textContent;
+        price.prime_rate__c = double.valueOf(node.getElementByTagName('pric:PrimeRate').textContent);
+        price.nbr_billing_cyles__c = node.getElementByTagName('pric:PromoPeriods').textContent;
+        price.promo_periods__c = integer.valueOf(node.getElementByTagName('pric:PromoPeriods').textContent);
+        price.promotional_rate__c = double.valueOf(node.getElementByTagName('pric:PromoRate').textContent);
+        price.promo_add_prime__c = node.getElementByTagName('pric:PromoAddPrime').textContent;
+        price.contract_rate_pct__c = double.valueOf(node.getElementByTagName('pric:ContractRate').textContent);
+        price.contract_margin__c =  node.getElementByTagName('pric:PenaltyAddPrime').textContent;
+        price.pen_rate_pct__c= double.valueOf(node.getElementByTagName('PenaltyRate').textContent);
+        price.penalty_margin__c = node.getElementByTagName('PenaltyAddPrime').textContent;
+        price.days_to_pay__c = integer.valueOf(node.getElementByTagName('DaysToPay').textContent);
+        price.late_fee_type__c = node.getElementByTagName('LateFeeType').textContent;
+        price.pct_late_fee__c = double.valueOf(node.getElementByTagName('LatePctFee').textContent);
+        price.fixed_late_fee__c = double.valueOf(node.getElementByTagName('FixedLateFee').textContent);
+        price.return_payment_fee__c = double.valueOf(node.getElementByTagName('RepaymentFee').textContent);
+        price.over_limit_fee__c = double.valueOf(node.getElementByTagName('OverLimitFee').textContent);
+        price.paper_delivery_fee__c = double.valueOf(node.getElementByTagName('PaperDeliveryFee').textContent);
+        price.penalty_rate_ceiling__c = double.valueOf(node.getElementByTagName('PenaltyRateCeiling').textContent);
+        price.minimum_payment_percentage__c = double.valueOf(node.getElementByTagName('MinPayPct').textContent);
+        SYSTEM.debug('new pricing' + price);
+        return price;
+    }
+    
+    
+    
+    
+}
